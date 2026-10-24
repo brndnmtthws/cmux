@@ -3,6 +3,7 @@ import CmuxNextActions
 @testable import CmuxNextApp
 import CmuxNextDaemon
 import Foundation
+import OSLog
 import Testing
 
 /// Lawrence 2026-10-23: "spamming a bunch of cmd shift d and cmd d etc is laggy ish". Every split
@@ -41,12 +42,21 @@ struct SplitBurstTests {
             // The second split's own outcome: nil, or why it failed.
             var failures: [String] = []
             for task in work { if let failure = await task.value { failures.append(failure.message) } }
-            #expect(failures.isEmpty, "the split of the stand-in failed: \(failures)")
+            #expect(failures.isEmpty, "the split of the stand-in failed: \(failures); the log: \(Self.rejections())")
             try await PinnedPageTests.until({ confirmed() == before.count + 2 && content.panes.count == before.count + 2 },
                                             report: { "\(content.panes.count) panes, \(confirmed()) made by the daemon; wanted \(before.count + 2); refusals \(seen.reasons)" })
             // And they stay: no refusal takes one back after its echo.
             try await Task.sleep(for: .milliseconds(300))
             #expect(content.panes.count == before.count + 2)
         }
+    }
+
+    /// This process's recent log lines about splits and rejected intents (the daemon's refusal text).
+    private static func rejections() -> [String] {
+        guard let store = try? OSLogStore(scope: .currentProcessIdentifier) else { return ["no log store"] }
+        let since = store.position(timeIntervalSinceLatestBoot: max(0, ProcessInfo.processInfo.systemUptime - 120))
+        guard let entries = try? store.getEntries(at: since) else { return ["no entries"] }
+        return Array(entries.compactMap { $0 as? OSLogEntryLog }.map(\.composedMessage)
+            .filter { $0.contains("rejected") || $0.contains("split") }.suffix(8))
     }
 }
