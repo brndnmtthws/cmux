@@ -1,7 +1,7 @@
 import AppKit
 import CmuxNextActions
 @testable import CmuxNextApp
-import CmuxNextDaemon
+@testable import CmuxNextDaemon
 import Foundation
 import OSLog
 import Testing
@@ -31,6 +31,7 @@ struct SplitBurstTests {
             let shown = services.registry.refusalObserver
             services.registry.refusalObserver = { reason, quiet in seen.reasons.append(reason); shown?(reason, quiet) }
             // Down, so the room check is the stand-in's height, not a third column's width.
+            let standInAtPress = creating.pane.handle
             let onStandIn = ActionInvocation(target: ActionTargetRef(kind: .pane, id: creating.pane.id), origin: .user)
             var performed = false
             let work = services.registry.capturingWork { performed = services.registry.perform("splitDown", invocation: onStandIn) }
@@ -42,7 +43,12 @@ struct SplitBurstTests {
             // The second split's own outcome: nil, or why it failed.
             var failures: [String] = []
             for task in work { if let failure = await task.value { failures.append(failure.message) } }
-            #expect(failures.isEmpty, "the split of the stand-in failed: \(failures); the log: \(Self.rejections())")
+            let store = services.daemon.store
+            let standIn = creating.pane.handle
+            let diagnosis = "stand-in at press \(standInAtPress.rawValue); now \(standIn.rawValue); daemonHandle(showing:) \(String(describing: store.daemonHandle(showing: standInAtPress)?.rawValue)); "
+                + "standInTargets \(store.standInTargets.map { "\($0.key.rawValue)->\($0.value)" }); "
+                + "resource \(String(describing: creating.pane.resourceID?.rawValue)) -> \(String(describing: creating.pane.resourceID.flatMap { store.index.panesByResource[$0]?.handle.rawValue }))"
+            #expect(failures.isEmpty, "the split of the stand-in failed: \(failures); \(diagnosis); the log: \(Self.rejections())")
             try await PinnedPageTests.until({ confirmed() == before.count + 2 && content.panes.count == before.count + 2 },
                                             report: { "\(content.panes.count) panes, \(confirmed()) made by the daemon; wanted \(before.count + 2); refusals \(seen.reasons)" })
             // And they stay: no refusal takes one back after its echo.
